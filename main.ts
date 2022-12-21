@@ -130,50 +130,53 @@ function main() {
   // const files = [];
   // traverseFilesystem(ARGS.path, files);
   // console.log(files);
-  glob("./src/components/CategoryCard/*.tsx", (err, files) => {
-    console.log(files);
-    const printer = ts.createPrinter();
+  glob(
+    "/Users/rpg59/work/master/services/catalog/src/**/*.tsx",
+    (err, files) => {
+      console.log(files);
+      const printer = ts.createPrinter();
 
-    files.forEach((file) => {
-      hasChange = false;
-      const program = ts.createProgram([file], {});
-      const source = program.getSourceFile(file);
-      const res = ts.transform(source as any, [collector, mutator]);
+      files.forEach((file) => {
+        hasChange = false;
+        const program = ts.createProgram([file], {});
+        const source = program.getSourceFile(file);
+        const res = ts.transform(source as any, [collector, mutator]);
 
-      if (hasChange) {
-        const lines = readFileSync(file).toString().split("\n");
-        const newFileArr = printer.printFile(res.transformed[0]).split("\n");
-        const linesWithNBefore: string[] = [];
-        let line = "";
-        let i = 0;
+        if (hasChange) {
+          const lines = readFileSync(file).toString().split("\n");
+          const newFileArr = printer.printFile(res.transformed[0]).split("\n");
+          const linesWithNBefore: string[] = [];
+          let line = "";
+          let i = 0;
 
-        while ((line = lines[i++]) !== undefined) {
-          if (line === "") {
-            linesWithNBefore.push(trimLine(lines[i++]));
+          while ((line = lines[i++]) !== undefined) {
+            if (line === "") {
+              linesWithNBefore.push(trimLine(lines[i++]));
+            }
           }
-        }
 
-        i = 0;
-        let newFile = "";
+          i = 0;
+          let newFile = "";
 
-        while ((line = newFileArr[i++]) !== undefined) {
-          const trimmedLine = trimLine(line);
-          const idx = linesWithNBefore.findIndex((x) => x === trimmedLine);
+          while ((line = newFileArr[i++]) !== undefined) {
+            const trimmedLine = trimLine(line);
+            const idx = linesWithNBefore.findIndex((x) => x === trimmedLine);
 
-          if (idx !== -1) {
+            if (idx !== -1) {
+              newFile += "\n";
+              linesWithNBefore.splice(idx, 1);
+            }
+            newFile += line;
             newFile += "\n";
-            linesWithNBefore.splice(idx, 1);
           }
-          newFile += line;
-          newFile += "\n";
+
+          // console.log(newFile);
+
+          writeFileSync(file, unescape(newFile.replace(/\\u/g, "%u")));
         }
-
-        console.log(newFile);
-
-        // writeFileSync(file, newFile);
-      }
-    });
-  });
+      });
+    }
+  );
 
   // console.log(ARGS.path);
 }
