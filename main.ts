@@ -20,13 +20,68 @@ const path = "./testFile.tsx";
 const program = ts.createProgram([path], {});
 const source = program.getSourceFile(path);
 
-const plasmaImports = ["@salutejs/plasma-ui"];
-const plasmaImportRegexps = [/@salutejs\/plasma-ui\/.*/];
-const importMap = {};
+enum PlasmaImportKeys {
+  UI = "@salutejs/plasma-ui",
+  WEB = "@salutejs/plasma-web",
+  TOKENS = "@salutejs/plasma-tokens",
+  B2C = "@salutejs/plasma-b2c",
+  TOKENSB2C = "@salutejs/plasma-tokens-b2c",
+  ICONS = "@salutejs/plasma-icons",
+}
+
+const plasmaImportRegexps: Record<PlasmaImportKeys, RegExp> = {
+  [PlasmaImportKeys.UI]: /@salutejs\/plasma-ui\/.*/,
+  [PlasmaImportKeys.WEB]: /@salutejs\/plasma-web\/.*/,
+  [PlasmaImportKeys.TOKENS]: /@salutejs\/plasma-tokens\/.*/,
+  [PlasmaImportKeys.B2C]: /@salutejs\/plasma-b2c\/.*/,
+  [PlasmaImportKeys.TOKENSB2C]: /@salutejs\/plasma-tokens-b2c\/.*/,
+  [PlasmaImportKeys.ICONS]: /@salutejs\/plasma-icons\/.*/,
+};
+
+const importsMap = Object.keys(plasmaImportRegexps).reduce(
+  (acc, b) => ({ ...acc, [b]: [] }),
+  {}
+);
+
+const createPlasmaImport = (specifiers: string[], from: string) =>
+  ts.factory.createImportDeclaration(
+    undefined,
+    undefined,
+    ts.factory.createImportClause(
+      false,
+      undefined,
+      ts.factory.createNamedImports(
+        specifiers.map((x) =>
+          ts.factory.createImportSpecifier(
+            false,
+            undefined,
+            ts.factory.createIdentifier(x)
+          )
+        )
+      )
+    ),
+    ts.factory.createStringLiteral(from)
+  );
 
 const mutator = (context) => {
   const visit = (node) => {
     // console.log(node);
+    if (ts.isImportDeclaration(node)) {
+      for (const [key, regexp] of Object.entries(plasmaImportRegexps)) {
+        // @ts-ignore
+        if (regexp.test(node.moduleSpecifier.text)) {
+          if (importsMap[key].length === 0) {
+            return null;
+          }
+
+          const res = createPlasmaImport(importsMap[key], key);
+
+          importsMap[key] = [];
+
+          return res;
+        }
+      }
+    }
 
     return node;
   };
@@ -34,12 +89,29 @@ const mutator = (context) => {
     ts.visitNode(node, (node) => ts.visitEachChild(node, visit, context));
 };
 
+const handleImport = (node): boolean => {
+  for (const [key, regexp] of Object.entries(plasmaImportRegexps)) {
+    if (regexp.test(node.moduleSpecifier.text)) {
+      // console.log(
+      //   node.importClause?.namedBindings.elements.map((x) => x.name.escapedText)
+      // );
+      node.importClause?.namedBindings.elements.forEach((x) =>
+        importsMap[key].push(x.name.escapedText)
+      );
+
+      return true;
+    }
+  }
+
+  return false;
+};
+
 const collector = (context) => {
   const visit = (node) => {
     // console.log(node);
 
     if (ts.isImportDeclaration(node)) {
-      return null;
+      handleImport(node);
     }
 
     // if (plasmaImportRegexps[0].test(node.moduleSpecifier.text)) {
