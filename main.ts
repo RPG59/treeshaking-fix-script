@@ -1,24 +1,15 @@
-import { readFileSync, readdirSync, writeFileSync } from "fs";
+import { readFileSync, readdirSync, writeFileSync, statSync } from "fs";
+import { resolve } from "path";
 import ts from "typescript";
+import yargs from "yargs";
+import glob from "glob";
 
-class FsReader {
-  files: string[] = [];
-
-  constructor(path: string, pattern: RegExp) {
-    const files = readFileSync(path);
-  }
-}
-
-class App {
-  readFs() {
-    // const files = readdirSync(".");
-  }
-  parse() {}
-}
-
-const path = "./testFile.tsx";
-const program = ts.createProgram([path], {});
-const source = program.getSourceFile(path);
+// @ts-ignore
+const ARGS = yargs(process.argv)
+  .options({
+    pattern: { type: "string" },
+  })
+  .parseSync();
 
 enum PlasmaImportKeys {
   UI = "@salutejs/plasma-ui",
@@ -37,6 +28,8 @@ const plasmaImportRegexps: Record<PlasmaImportKeys, RegExp> = {
   [PlasmaImportKeys.TOKENSB2C]: /@salutejs\/plasma-tokens-b2c\/.*/,
   [PlasmaImportKeys.ICONS]: /@salutejs\/plasma-icons\/.*/,
 };
+
+let hasChange = false;
 
 const importsMap = Object.keys(plasmaImportRegexps).reduce(
   (acc, b) => ({ ...acc, [b]: [] }),
@@ -70,6 +63,7 @@ const mutator = (context) => {
       for (const [key, regexp] of Object.entries(plasmaImportRegexps)) {
         // @ts-ignore
         if (regexp.test(node.moduleSpecifier.text)) {
+          hasChange = true;
           if (importsMap[key].length === 0) {
             return null;
           }
@@ -92,9 +86,6 @@ const mutator = (context) => {
 const handleImport = (node): boolean => {
   for (const [key, regexp] of Object.entries(plasmaImportRegexps)) {
     if (regexp.test(node.moduleSpecifier.text)) {
-      // console.log(
-      //   node.importClause?.namedBindings.elements.map((x) => x.name.escapedText)
-      // );
       node.importClause?.namedBindings.elements.forEach((x) =>
         importsMap[key].push(x.name.escapedText)
       );
@@ -108,58 +99,83 @@ const handleImport = (node): boolean => {
 
 const collector = (context) => {
   const visit = (node) => {
-    // console.log(node);
-
     if (ts.isImportDeclaration(node)) {
       handleImport(node);
     }
 
-    // if (plasmaImportRegexps[0].test(node.moduleSpecifier.text)) {
-    //   // @ts-ignore
-    //   // console.log(node.moduleSpecifier.text.replace(plasmaImports[0], ""));
-    //   console.log(node);
-    // }
-
     return node;
   };
 
-  // return (node) =>
-  //   ts.visitNode(node, (node) => {
-  //     // delete node.imports[0];
-  //     // console.log(node.imports.length);
-  //     // @ts-ignore
-  //     // @ts-ignore
-
-  //     // console.log(node.statements.length);
-
-  //     // @ts-ignore
-  //     for (let i = 0; i < node.statements.length; ++i) {
-  //       // @ts-ignore
-  //       const statement = node.statements[i];
-
-  //       if (ts.isImportDeclaration(statement)) {
-  //         // @ts-ignore
-  //         // @ts-ignore
-  //         console.log(statement.moduleSpecifier.text);
-  //         // @ts-ignore
-  //         if (statement.moduleSpecifier.text === "react") {
-  //           // @ts-ignore
-  //           console.log(statement.moduleSpecifier.text);
-  //           // @ts-ignore
-  //           delete node.statements[i];
-  //         }
-  //       }
-  //     }
-
-  //     return node;
-  //   });
   return (node) =>
     ts.visitNode(node, (node) => ts.visitEachChild(node, visit, context));
 };
 // console.log(source);
 
-const res = ts.transform(source as any, [collector, mutator]);
+// const traverseFilesystem = (dirpath: string, filesArrRef: string[]) => {
+//   readdirSync(dirpath).forEach((file) => {
+//     const filepath = resolve(dirpath, file);
+//     const status = statSync(filepath);
 
-const printer = ts.createPrinter();
+//     if (status.isDirectory()) {
+//       traverseFilesystem(filepath, filesArrRef);
+//     } else {
+//       filesArrRef.push(filepath);
+//     }
+//   });
+// };
 
-console.log(printer.printFile(res.transformed[0]));
+const trimLine = (line) => line?.replace(/\s|`|;/g, "");
+
+function main() {
+  // const files = [];
+  // traverseFilesystem(ARGS.path, files);
+  // console.log(files);
+  glob("./src/components/CategoryCard/*.tsx", (err, files) => {
+    console.log(files);
+    const printer = ts.createPrinter();
+
+    files.forEach((file) => {
+      hasChange = false;
+      const program = ts.createProgram([file], {});
+      const source = program.getSourceFile(file);
+      const res = ts.transform(source as any, [collector, mutator]);
+
+      if (hasChange) {
+        const lines = readFileSync(file).toString().split("\n");
+        const newFileArr = printer.printFile(res.transformed[0]).split("\n");
+        const linesWithNBefore: string[] = [];
+        let line = "";
+        let i = 0;
+
+        while ((line = lines[i++]) !== undefined) {
+          if (line === "") {
+            linesWithNBefore.push(trimLine(lines[i++]));
+          }
+        }
+
+        i = 0;
+        let newFile = "";
+
+        while ((line = newFileArr[i++]) !== undefined) {
+          const trimmedLine = trimLine(line);
+          const idx = linesWithNBefore.findIndex((x) => x === trimmedLine);
+
+          if (idx !== -1) {
+            newFile += "\n";
+            linesWithNBefore.splice(idx, 1);
+          }
+          newFile += line;
+          newFile += "\n";
+        }
+
+        console.log(newFile);
+
+        // writeFileSync(file, newFile);
+      }
+    });
+  });
+
+  // console.log(ARGS.path);
+}
+
+main();
