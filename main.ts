@@ -86,9 +86,17 @@ const mutator = (context) => {
 const handleImport = (node): boolean => {
   for (const [key, regexp] of Object.entries(plasmaImportRegexps)) {
     if (regexp.test(node.moduleSpecifier.text)) {
-      node.importClause?.namedBindings.elements.forEach((x) =>
-        importsMap[key].push(x.name.escapedText)
-      );
+      // console.log(node.importClause?.getChildAt(0));
+
+      node.importClause?.namedBindings.elements.forEach((x) => {
+        if (x?.propertyName?.escapedText) {
+          importsMap[key].push(
+            `${x.propertyName.escapedText} as ${x.name.escapedText}`
+          );
+        } else {
+          importsMap[key].push(x.name.escapedText);
+        }
+      });
 
       return true;
     }
@@ -100,6 +108,13 @@ const handleImport = (node): boolean => {
 const collector = (context) => {
   const visit = (node) => {
     if (ts.isImportDeclaration(node)) {
+      // let clauses = node.importClause?.forEachChild((x) => {
+      //   if (ts.isNamedImports(x)) {
+      //     x.elements.forEach((x) => {
+      //       console.log(x.propertyName?.escapedText);
+      //     });
+      //   }
+      // });
       handleImport(node);
     }
 
@@ -157,7 +172,7 @@ function main() {
 
           // console.log(newFileArr.concat(lines));
 
-          // console.log(newFile);
+          console.log(newFile);
 
           // writeFileSync(file, unescape(newFile.replace(/\\u/g, "%u")));
           writeFileSync(file, newFileArr.concat(lines));
