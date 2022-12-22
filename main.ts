@@ -86,9 +86,17 @@ const mutator = (context) => {
 const handleImport = (node): boolean => {
   for (const [key, regexp] of Object.entries(plasmaImportRegexps)) {
     if (regexp.test(node.moduleSpecifier.text)) {
-      node.importClause?.namedBindings.elements.forEach((x) =>
-        importsMap[key].push(x.name.escapedText)
-      );
+      // console.log(node.importClause?.getChildAt(0));
+
+      node.importClause?.namedBindings.elements.forEach((x) => {
+        if (x?.propertyName?.escapedText) {
+          importsMap[key].push(
+            `${x.propertyName.escapedText} as ${x.name.escapedText}`
+          );
+        } else {
+          importsMap[key].push(x.name.escapedText);
+        }
+      });
 
       return true;
     }
@@ -100,6 +108,13 @@ const handleImport = (node): boolean => {
 const collector = (context) => {
   const visit = (node) => {
     if (ts.isImportDeclaration(node)) {
+      // let clauses = node.importClause?.forEachChild((x) => {
+      //   if (ts.isNamedImports(x)) {
+      //     x.elements.forEach((x) => {
+      //       console.log(x.propertyName?.escapedText);
+      //     });
+      //   }
+      // });
       handleImport(node);
     }
 
@@ -131,7 +146,7 @@ function main() {
   // traverseFilesystem(ARGS.path, files);
   // console.log(files);
   glob(
-    "/Users/rpg59/work/master/services/catalog/src/**/*.tsx",
+    "/home/rpg59/work/frontend/services/catalog/src/**/*.tsx",
     (err, files) => {
       console.log(files);
       const printer = ts.createPrinter();
@@ -143,36 +158,24 @@ function main() {
         const res = ts.transform(source as any, [collector, mutator]);
 
         if (hasChange) {
-          const lines = readFileSync(file).toString().split("\n");
-          const newFileArr = printer.printFile(res.transformed[0]).split("\n");
-          const linesWithNBefore: string[] = [];
-          let line = "";
-          let i = 0;
+          const lines = readFileSync(file)
+            .toString()
+            .split(";")
+            .filter((x) => /^(?!import)/.test(x.replace(/\n/g, "")))
+            .join(";");
 
-          while ((line = lines[i++]) !== undefined) {
-            if (line === "") {
-              linesWithNBefore.push(trimLine(lines[i++]));
-            }
-          }
+          const newFileArr = printer
+            .printFile(res.transformed[0])
+            .split("\n")
+            .filter((x) => /^import/.test(x))
+            .join("\n");
 
-          i = 0;
-          let newFile = "";
+          // console.log(newFileArr.concat(lines));
 
-          while ((line = newFileArr[i++]) !== undefined) {
-            const trimmedLine = trimLine(line);
-            const idx = linesWithNBefore.findIndex((x) => x === trimmedLine);
+          console.log(newFile);
 
-            if (idx !== -1) {
-              newFile += "\n";
-              linesWithNBefore.splice(idx, 1);
-            }
-            newFile += line;
-            newFile += "\n";
-          }
-
-          // console.log(newFile);
-
-          writeFileSync(file, unescape(newFile.replace(/\\u/g, "%u")));
+          // writeFileSync(file, unescape(newFile.replace(/\\u/g, "%u")));
+          writeFileSync(file, newFileArr.concat(lines));
         }
       });
     }
